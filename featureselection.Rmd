@@ -22,9 +22,9 @@ Lets try to look at possible
 
 ```{r cars echo=FALSE results="hide" include=FALSE}
 set.seed(7) 
-
 # load caret
 library(caret)
+install.packages("ggplot2")
 
 control <- trainControl(method="repeatedcv", number=10, repeats=3)
 model <- train(class4~., data=npf, method="multinom", preProcess="scale", trControl=control)

@@ -14,6 +14,7 @@ Let's read in the data and remove columns 1,2,4 (id,date,partlybad) which are un
 ```{r data}
 npf <- read.csv("npf_train.csv") #read in data
 npf_test <- read.csv("npf_test_hidden.csv")
+npf_test
 
 npf <- npf[,-c(1:2,4)] # drop the id, date, partlybad columns
 npf_test <- npf_test[,-c(1:2,4)]
@@ -69,9 +70,10 @@ Lets create new data sets for each of the aforementioned cutoffs.
 ```{r}
 npf <- npf[,c(ncol(npf),1:(ncol(npf)-1))] #move class2 column to first
 
-npf75names <- importance[importance["event"]>0.75,]$names #33 features
-npf82names <- importance[importance["event"]>0.80,]$names # 12
-npf83_8names <- importance[importance["event"]>0.838,]$names #6 
+npf75names <- sapply(importance[importance["event"]>0.75,]$names, function(x) toString(x)) #33 features
+npf82names <- sapply(importance[importance["event"]>0.80,]$names, function(x) toString(x))# 12
+npf83_8names <- sapply(importance[importance["event"]>0.838,]$names, function(x) toString(x))#6
+
 
 npf75 <- npf[, c("class2",npf75names)]
 npf82 <- npf[, c("class2",npf82names)]
@@ -136,8 +138,8 @@ importance <- data.frame(varImp(model, scale=FALSE)$importance)
 importance <- data.frame(importance, names = rownames(importance))
 importance <- importance[order(importance$event,decreasing = T),]
 
-npf70names <- importance[importance["event"]>0.70,]$names #6 features
-npf75names <- importance[importance["event"]>0.75,]$names # 4 features
+npf70names <- sapply(importance[importance["event"]>0.70,]$names, function(x) toString(x)) #6 features
+npf75names <- sapply(importance[importance["event"]>0.75,]$names, function(x) toString(x)) # 4 features
 
 
 npf70 <- npf[, c("class2",npf70names)]
