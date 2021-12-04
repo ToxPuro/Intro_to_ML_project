@@ -1,0 +1,189 @@
+---
+title: "Project"
+author: "Topi Sirkiä, Touko Puro, William McWhorter"
+date: "12/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Let's read in the data and remove columns 1,2,4 (id,date,partlybad) which are unhelpful.
+
+```{r data}
+npf <- read.csv("npf_train.csv") #read in data
+npf_test <- read.csv("npf_test_hidden.csv")
+
+npf <- npf[,-c(1:2,4)] # drop the id, date, partlybad columns
+npf_test <- npf_test[,-c(1:2,4)]
+print(npf)
+
+```
+
+Let's further restrict the case to binary classification by classifying Ib,Ia and II event types as just "event". We can also drop class 4 column afterwards.
+
+```{r pressure}
+
+npf$class2 <- factor("event",levels=c("nonevent", "event"))
+npf$class2[npf$class4=="nonevent"] <- "nonevent"
+npf <- npf[,-1]
+```
+
+Lets try to do some variable selection using repeated 10 fold cv with caret's trainControl function and selecting variables with the varImp() function. As our method for now we will have linear svm. It turns out a bit later that its not a good idea to start variable selection before cutting the highly correlated stuff out but we fix it later.
+
+```{r}
+set.seed(7) 
+
+# lets use caret
+library(caret)
+
+#note that classprobs argument has to be true if we want svm to give probabilities
+control <- trainControl(method="repeatedcv", number=10, repeats=3,classProbs=TRUE)
+model <- train(class2~., data=npf, method="svmLinear2", preProcess="scale", trControl=control)
+
+#lets sort the importances
+importance <- data.frame(varImp(model, scale=FALSE)$importance)
+importance <- data.frame(importance, names = rownames(importance))
+importance <- importance[order(importance$event,decreasing = T),]
+
+plot(model)
+
+```
+One can try different folds (number) and repetitions (repeats) in the trainControl function to see what happens. These current values I just threw in.
+
+Let's plot the importances:
+```{r}
+plot(varImp(model, scale=FALSE), ylab="Variables")
+
+```
+
+Ignoring the messy y axis names, we can see how the importance changes.
+It's clear that that there is a large dropoff in variable importance around importance=0.76 so that could be a good cut off point. However this may still be too many features. Other options include simply taking the very top features (Those are the RHIRGA values) around importance=0.85 or somewhere in the middle of these two, around importance=80.
+
+```{r}
+print(importance)
+```
+Lets create new data sets for each of the aforementioned cutoffs.
+
+```{r}
+npf <- npf[,c(ncol(npf),1:(ncol(npf)-1))] #move class2 column to first
+
+npf75names <- importance[importance["event"]>0.75,]$names #33 features
+npf82names <- importance[importance["event"]>0.80,]$names # 12
+npf83_8names <- importance[importance["event"]>0.838,]$names #6 
+
+npf75 <- npf[, c("class2",npf75names)]
+npf82 <- npf[, c("class2",npf82names)]
+npf83_8 <- npf[, c("class2",npf83_8names)]
+```
+
+We are now ready to compare. The features obtained here are only good for working with the chosen model. If we want to try another model, we have to do the variable selection over, since different models may rely on different features. For this reason we may want to make a function that takes in the wanted model name and does all the above for us, but I didnt do that yet. 
+
+Now that we have 3 sets of possible features, we can train the model again for each of them, and see which has the best CV-score. That will be the model we go with.
+
+
+```{r}
+model1 <- train(class2~., data=npf75, method="svmLinear2", preProcess="scale", trControl=control)
+model2 <- train(class2~., data=npf82, method="svmLinear2", preProcess="scale", trControl=control)
+model3 <- train(class2~., data=npf83_8, method="svmLinear2", preProcess="scale", trControl=control)
+```
+
+```{r}
+library(knitr)
+
+df <- setNames(data.frame(matrix(ncol = 4, nrow = 3)), names(model1$results)[2:5])
+rownames(df) <- c("npf75", "npf82", "npf83_8") 
+
+df[1,] = sapply(model1$results, mean)[2:5] #mean is over the 3 repetitions of the 10 fold cv.
+df[2,] = sapply(model2$results, mean)[2:5]
+df[3,] = sapply(model3$results, mean)[2:5]
+kable(df)
+```
+The cv accuracy seems to go down when we decrease the amount of features. Currently we have a lot of very correlated features, so that might be the reason. For example near the top we only have each of the RHIRGA's. It seems that the train() and varImp() functions didnt care about features being correlated. 
+
+```{r}
+library(GGally)
+ggpairs(npf83_8, aes(colour = class2, alpha = 0.4))
+```
+
+I suppose before choosing features, we should toss out all the very correlated stuff. This can be done by making a correlation matrix using the cor() function and then using the caret findCorrelation() function which will give the indices of the columns that are highly correlated. Then we drop those columns and hopefully get a more sensible result. Lets consider the original dataframe npf.
+
+```{r}
+cm <- cor(npf[,-1]) # note that we ignore the class 2 column here as we dont want to drop it obviously
+
+# find attributes that are highly corrected (the threshold for being cut can be changed.)
+highcorr <- findCorrelation(cm, cutoff = 0.75)+1 #+1 to get the indexing in the npf df where class2 bumps all the indices up by 1.
+
+print(highcorr) # indices of what we want to cut
+
+npf <- npf[,-c(highcorr)]
+print(npf)
+```
+We are left with 26 columns, and they look a lot more varied now. Lets find the importances.
+```{r}
+
+control <- trainControl(method="repeatedcv", number=10, repeats=3,classProbs=TRUE)
+model <- train(class2~., data=npf, method="svmLinear2", preProcess="scale", trControl=control)
+
+plot(varImp(model, scale=FALSE), ylab="Variables")
+```
+This looks better. Let's pick for example the variables with importance above 70 (above 75 is another choice).
+Lets also check the pair plot now.
+```{r}
+#lets sort the importances
+importance <- data.frame(varImp(model, scale=FALSE)$importance)
+importance <- data.frame(importance, names = rownames(importance))
+importance <- importance[order(importance$event,decreasing = T),]
+
+npf70names <- importance[importance["event"]>0.70,]$names #6 features
+npf75names <- importance[importance["event"]>0.75,]$names # 4 features
+
+
+npf70 <- npf[, c("class2",npf70names)]
+npf75 <- npf[, c("class2",npf75names)]
+
+ggpairs(npf70, aes(colour = class2, alpha = 0.4))
+```
+Ok, looks better. Now lets train a model for both cases:
+
+```{r}
+model1 <- train(class2~., data=npf70, method="svmLinear2", preProcess="scale", trControl=control)
+model2 <- train(class2~., data=npf75, method="svmLinear2", preProcess="scale", trControl=control)
+
+
+df <- setNames(data.frame(matrix(ncol = 4, nrow = 2)), names(model1$results)[2:5])
+rownames(df) <- c("npf70", "npf75")
+
+df[1,] = sapply(model1$results, mean)[2:5] #mean is over the 3 repetitions of the 10 fold cv.
+df[2,] = sapply(model2$results, mean)[2:5]
+
+kable(df)
+```
+We get a 76.6% accuracy for including the two features SWG.mean and PTG.std (6 total features) vs 77.3% without them (4 total features). Now we will predict the test results using model1 (4 features)
+```{r}
+npf_test <- npf_test[,c(ncol(npf_test),1:(ncol(npf_test)-1))] #move class2 column to first
+
+predictions <- predict(model1, npf_test)
+npf_test$class2 <- predictions # If we need to estimate something for the multiclass probabilities, I guess the best we could do with the binary probabilities is to look at the frequencies of each class [ia,ib,ii] in the original dataset and then split the "event" probability accordingly into those class probabilities
+
+table(predictions)
+head(npf_test)
+```
+
+Lets take a look at the predicted probabilities
+```{r}
+predictedprobs <- predict(model1, npf_test, type="prob")
+print(predictedprobs)
+plot(predictedprobs)
+```
+parameters that can be changed:
+-number of kfolds/repetitions (currently 10/3)
+-the model itself (random forest maybe next)
+-number of features included (although for this model these seem the best)
+-cut-off rate for the correlations (currently 0.75)
+
+Let's try to generalize the above with a function that does all of it for a given model. Note that the with the svm the cutoffs were manually chosen by looking at the plot. Within the function theres no way to really look at the plot and make the cutoffs for each model.
+
+
+
