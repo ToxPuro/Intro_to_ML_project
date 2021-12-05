@@ -136,8 +136,9 @@ Lets also check the pair plot now.
 #lets sort the importances
 importance <- data.frame(varImp(model, scale=FALSE)$importance)
 importance <- data.frame(importance, names = rownames(importance))
+print(importance$event)
 importance <- importance[order(importance$event,decreasing = T),]
-
+print(importance)
 npf70names <- sapply(importance[importance["event"]>0.70,]$names, function(x) toString(x)) #6 features
 npf75names <- sapply(importance[importance["event"]>0.75,]$names, function(x) toString(x)) # 4 features
 
@@ -187,5 +188,60 @@ parameters that can be changed:
 
 Let's try to generalize the above with a function that does all of it for a given model. Note that the with the svm the cutoffs were manually chosen by looking at the plot. Within the function theres no way to really look at the plot and make the cutoffs for each model.
 
+```{r}
+library(caret)
 
+
+
+
+get_non_correlated_features <- function(path, cutoff){
+  npf <- read.csv("npf_train.csv") #read in data
+  npf <- npf[,-c(1:2,4)] # drop the id, date, partlybad columns
+  npf$class2 <- factor("event",levels=c("nonevent", "event"))
+  npf$class2[npf$class4=="nonevent"] <- "nonevent"
+  npf <- npf[,-1]
+  npf <- npf[,c(ncol(npf),1:(ncol(npf)-1))]
+  cm <- cor(npf[,-1]) # note that we ignore the class 2 column here as we dont want to drop it obviously
+    
+  # find attributes that are highly corrected (the threshold for being cut can be changed.)
+  highcorr <- findCorrelation(cm, cutoff = cutoff)+1
+    
+  npf <- npf[,-c(highcorr)]
+  
+  return(npf)
+  
+}
+
+train_with_different_features <- function(model, corr_cutoff){
+  npf <- get_non_correlated_features("npf_train.csv", corr_cutoff)
+  control <- trainControl(method="repeatedcv", number=10, repeats=3,classProbs=TRUE)
+  model <- train(class2~., data=npf, method=model, preProcess="scale", trControl=control)
+  plot(varImp(model, scale=FALSE), ylab="Variables")
+  importance <- data.frame(varImp(model, scale=FALSE)$importance)
+  importance <- data.frame(importance, names = rownames(importance))
+  feature_importance <- importance$event
+  if (is.null(feature_importance)){
+    feature_importance <- importance$Overall
+  }
+  importance <- importance[order(feature_importance,decreasing = T),]
+  accuracy <- rep(0,25)
+  for(i in 1:25){
+    npfnames <- sapply(importance$names[1:i], function(x) toString(x))
+    npftrain <- npf[, c("class2",npfnames)]
+    model1 <- train(class2~., data=npftrain, method="rf", preProcess="scale", trControl=control)
+      
+    accuracy[i] = sapply(model1$results, mean)[2] #mean is over the 3 repetitions of the 10 fold cv.
+    
+  }
+  print(accuracy)
+  plot(accuracy, type="b")
+}
+
+print(get_non_correlated_features("npf_train.csv", 0.75))
+
+train_with_different_features("svmLinear2", 0.75)
+
+
+
+```
 
