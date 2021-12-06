@@ -231,7 +231,7 @@ train_with_different_features <- function(model_name, corr_cutoff){
   importance <- get_importance(model)
   models <- list()
   accuracy <- rep(0,25)
-  for(i in 1:1){
+  for(i in 1:length(importance)){
     npfnames <- sapply(importance$names[1:i], function(x) toString(x))
     npftrain <- npf[, c("class2",npfnames)]
     model1 <- train(class2~., data=npftrain, method=model_name, preProcess="scale", trControl=control)
