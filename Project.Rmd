@@ -213,18 +213,64 @@ get_non_correlated_features <- function(path, cutoff){
   
 }
 
+get_full_non_correlated_features <- function(path, cutoff){
+  npf <- read.csv("npf_train.csv") #read in data
+  npf <- npf[,-c(1:2,4)] # drop the id, date, partlybad columns
+  cm <- cor(npf[,-1]) # note that we ignore the class column here as we dont want to drop it obviously
+    
+  # find attributes that are highly corrected (the threshold for being cut can be changed.)
+  highcorr <- findCorrelation(cm, cutoff = cutoff)+1
+    
+  npf <- npf[,-c(highcorr)]
+  
+  return(npf)
+}
 get_importance <- function(model){
+  print("Here")
+  print(model)
   plot(varImp(model, scale=FALSE), ylab="Variables")
+  print("Here2")
   importance <- data.frame(varImp(model, scale=FALSE)$importance)
+  print(importance)
   importance <- data.frame(importance, names = rownames(importance))
   feature_importance <- importance$event
   if (is.null(feature_importance)){
     feature_importance <- importance$Overall
   }
+  
   importance <- importance[order(feature_importance,decreasing = T),]
   return(importance)
 }
 
+plot_importance <- function(model_name){
+  npf <- get_non_correlated_features("npf_train.csv", 0.75)
+  control <- trainControl(method="repeatedcv", number=10, repeats=5,classProbs=TRUE)
+  model <- train(class2~., data=npf, method=model_name, preProcess="scale", trControl=control)
+  plot(varImp(model, scale=FALSE), ylab="Variables")
+}
+
+save_binary_importance_csv <- function(model_name){
+  npf <- get_non_correlated_features("npf_train.csv", 0.75)
+  control <- trainControl(method="repeatedcv", number=10, repeats=5,classProbs=TRUE)
+  model <- train(class2~., data=npf, method=model_name, preProcess="scale", trControl=control)
+  importance <- get_importance(model)
+  s = "${model}_binary.csv"
+  csv_name = stringr::str_interp(s, list(model=model_name))
+  write.csv(importance, csv_name)
+
+}
+
+save_full_importance_csv <- function(model_name){
+  npf <- get_full_non_correlated_features("npf_train.csv", 0.75)
+  control <- trainControl(method="repeatedcv", number=10, repeats=5,classProbs=TRUE)
+  model <- train(class4~., data=npf, method=model_name, preProcess="scale", trControl=control, importance=TRUE)
+  importance <- get_importance(model)
+  s = "${model}_full.csv"
+  csv_name = stringr::str_interp(s, list(model=model_name))
+  write.csv(importance, csv_name)
+}
+save_full_importance_csv("knn")
+save_binary_importance_csv("knn")
 train_with_different_features <- function(model_name, corr_cutoff){
   npf <- get_non_correlated_features("npf_train.csv", corr_cutoff)
   control <- trainControl(method="repeatedcv", number=10, repeats=5,classProbs=TRUE)
@@ -264,7 +310,8 @@ train_with_different_cutoff <- function(model_name, cutoffs){
 }
 
 
-models <- train_with_different_features("svmLinear2", c(0.75))
+models <- train_with_different_features("svmLinear2", 0.75)
+print(models[[3]])
 print(models[[1]]$result)
 print(sapply(models[[1]]$result, mean))
 plot_accuracies(models)
