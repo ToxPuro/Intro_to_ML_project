@@ -107,7 +107,7 @@ The cv accuracy seems to go down when we decrease the amount of features. Curren
 
 ```{r}
 library(GGally)
-ggpairs(npf83_8, aes(colour = class2, alpha = 0.4))
+ggpairs(npf82, aes(alpha = 0.4))
 ```
 
 I suppose before choosing features, we should toss out all the very correlated stuff. This can be done by making a correlation matrix using the cor() function and then using the caret findCorrelation() function which will give the indices of the columns that are highly correlated. Then we drop those columns and hopefully get a more sensible result. Lets consider the original dataframe npf.
@@ -229,7 +229,7 @@ get_importance <- function(model){
   print("Here")
   print(model)
   plot(varImp(model, scale=FALSE), ylab="Variables")
-  print("Here2")
+ 
   importance <- data.frame(varImp(model, scale=FALSE)$importance)
   print(importance)
   importance <- data.frame(importance, names = rownames(importance))
@@ -237,10 +237,23 @@ get_importance <- function(model){
   if (is.null(feature_importance)){
     feature_importance <- importance$Overall
   }
-  
+  print("Here2")
   importance <- importance[order(feature_importance,decreasing = T),]
   return(importance)
 }
+
+get_full_importance <- function(model){
+  print(model)
+  plot(varImp(model, scale=FALSE), ylab="Variables")
+ 
+  importance <- data.frame(varImp(model, scale=FALSE)$importance)
+  importance <- data.frame(importance, names = rownames(importance))
+  feature_importance <- apply(importance, 1, mean)
+  importance <- importance[order(feature_importance,decreasing = T),]
+  return(importance)
+}
+
+
 
 plot_importance <- function(model_name){
   npf <- get_non_correlated_features("npf_train.csv", 0.75)
@@ -260,11 +273,13 @@ save_binary_importance_csv <- function(model_name){
 
 }
 
+save_full_importance_csv("nb")
+
 save_full_importance_csv <- function(model_name){
   npf <- get_full_non_correlated_features("npf_train.csv", 0.75)
   control <- trainControl(method="repeatedcv", number=10, repeats=5,classProbs=TRUE)
-  model <- train(class4~., data=npf, method=model_name, preProcess="scale", trControl=control, importance=TRUE)
-  importance <- get_importance(model)
+  model <- train(class4~., data=npf, method=model_name, preProcess="scale", trControl=control)
+  importance <- get_full_importance(model)
   s = "${model}_full.csv"
   csv_name = stringr::str_interp(s, list(model=model_name))
   write.csv(importance, csv_name)
@@ -310,11 +325,27 @@ train_with_different_cutoff <- function(model_name, cutoffs){
 }
 
 
+
 models <- train_with_different_features("svmLinear2", 0.75)
 print(models[[3]])
 print(models[[1]]$result)
 print(sapply(models[[1]]$result, mean))
 plot_accuracies(models)
 plot(models[[1]])
+
+
+npf <- get_full_non_correlated_features("npf_train.csv", 0.75)
+control <- trainControl(method="repeatedcv", number=10, repeats=5,classProbs=TRUE)
+model <- train(class4~., data=npf, method="knn", preProcess="scale", trControl=control)
+importance <- data.frame(varImp(model, scale=FALSE)$importance)
+importance$all <- apply(importance, 1, mean)
+importance
+```
+```{r}
+npf <- read.csv("knn_binary.csv")
+npf <- read.csv("rf_full.csv")
+npf <-read.csv("npf_train.csv")
+print(npf)
+print(npf)
 ```
 
